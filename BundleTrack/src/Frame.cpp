@@ -26,18 +26,32 @@ Frame::Frame(const py::array_t<uchar> &color, const py::array_t<float> &depth, c
   _status = OTHER;
   py::buffer_info buf = color.request();
   _color = cv::Mat(buf.shape[0], buf.shape[1], CV_8UC3, (uchar*)buf.ptr).clone();
+  _color_raw = _color.clone();
+  
   buf = depth.request();
-  _depth = cv::Mat(buf.shape[0], buf.shape[1], CV_32F, (uchar*)buf.ptr).clone();
+  _depth = cv::Mat(buf.shape[0], buf.shape[1], CV_32F, (float*)buf.ptr).clone();
+  _depth_raw = _depth.clone();
+  _depth_sim = _depth.clone();
+  
   _roi = roi;
   _pose_in_model = pose_in_model;
+  _gt_pose_in_model = Eigen::Matrix4f::Identity();
   _id = id;
   _id_str = id_str;
   _K = K;
   yml = yml1;
-
-  _depth_raw = _depth.clone();
-  _depth_sim = _depth.clone();
-
+  
+  _H = _color.rows;
+  _W = _color.cols;
+  
+  _cloud = boost::make_shared<PointCloudRGBNormal>();
+  _cloud_down = boost::make_shared<PointCloudRGBNormal>();
+  _real_model = boost::make_shared<PointCloudRGBNormal>();
+  
+  _depth_gpu = nullptr;
+  _color_gpu = nullptr;
+  _normal_gpu = nullptr;
+  
   init();
 }
 

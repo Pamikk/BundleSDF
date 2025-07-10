@@ -20,6 +20,7 @@ from transformations import *
 from scipy.spatial import cKDTree
 from collections import OrderedDict
 import ruamel.yaml
+
 yaml = ruamel.yaml.YAML()
 try:
   import kaolin
@@ -27,8 +28,8 @@ except Exception as e:
   print(f"Import kaolin failed, {e}")
 try:
   from mycuda import common
-except:
-  pass
+except Exception as e:
+  print(f"Import mycuda failed, {e}")
 
 
 BAD_DEPTH = 99
@@ -449,7 +450,6 @@ class OctreeManager:
         Return:
             ray_depths_in_out: traveling times, NOT the Z value
         """
-        from mycuda import common
 
         # Avoid corner cases. issuse in kaolin: https://github.com/NVIDIAGameWorks/kaolin/issues/490 and https://github.com/NVIDIAGameWorks/kaolin/pull/634
         # rays_o = rays_o.clone() + 1e-7
