@@ -13,7 +13,7 @@
 #define FEATURE_MANAGER_H_
 #include <zmq.hpp>
 #include <zmq_addon.hpp>
-#include <opencv2/xfeatures2d/nonfree.hpp>
+// #include <opencv2/xfeatures2d/nonfree.hpp>
 #include <opencv2/core/types.hpp>
 
 // #include "magsac_utils.h"
