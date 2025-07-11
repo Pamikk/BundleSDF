@@ -442,6 +442,32 @@ void getRotateImageTransform(int H, int W, float rot, Eigen::Matrix3f &forward_t
   forward_transform = tf*forward_transform;
 }
 
+std::string joinPath(const std::string &base, const std::string &path)
+{
+  if (base.empty()) return path;
+  if (path.empty()) return base;
+  
+  std::string result = base;
+  
+  // Ensure base ends with separator
+  if (result.back() != '/' && result.back() != '\\') {
+    result += '/';
+  }
+  
+  // Remove leading separator from path if present
+  std::string cleanPath = path;
+  if (!cleanPath.empty() && (cleanPath.front() == '/' || cleanPath.front() == '\\')) {
+    cleanPath = cleanPath.substr(1);
+  }
+  
+  return result + cleanPath;
+}
+
+std::string joinPath(const std::string &base, const std::string &path1, const std::string &path2)
+{
+  return joinPath(joinPath(base, path1), path2);
+}
+
 
 } // namespace Utils
 

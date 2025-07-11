@@ -18,10 +18,160 @@ from BundleTrack.scripts.data_reader import *
 from Utils import *
 from loftr_wrapper import LoftrRunner
 import multiprocessing,threading
+import torch
+from typing import Dict
 try:
   multiprocessing.set_start_method('spawn')
 except:
   pass
+
+# Tensor precision management utilities
+def set_bundlesdf_precision(use_full_precision: bool = True) -> torch.dtype:
+    """Configure PyTorch tensor types for BundleSDF operations.
+    
+    This function sets the default tensor type and precision for all BundleSDF operations.
+    Using full precision (float32) is recommended for pose tracking to ensure numerical stability.
+    
+    Args:
+        use_full_precision: Whether to use full precision (float32) or allow mixed precision.
+            Defaults to True for maximum stability.
+            
+    Returns:
+        torch.dtype: The current default tensor type after configuration.
+        
+    Note:
+        When use_full_precision is True:
+        - Forces float32 precision for all tensors
+        - Uses CUDA FloatTensor if CUDA is available
+        - Ensures maximum numerical stability for pose tracking
+    """
+    if use_full_precision:
+        # Force full precision (safest option for pose tracking)
+        torch.set_default_dtype(torch.float32)
+        if torch.cuda.is_available():
+            torch.set_default_tensor_type(torch.cuda.FloatTensor)
+        logging.info("Set PyTorch to use full precision (float32) for BundleSDF")
+    return torch.get_default_dtype()
+
+# Define required tensor types for different operations
+LOFTR_TYPES = {
+    'rgbAs': torch.float32,
+    'rgbBs': torch.float32,
+    'warp': torch.float32,
+    'certainty': torch.float32,
+    'matches': torch.float32
+}
+
+class TensorUtils:
+    """Handles tensor type management and conversions."""
+
+    @staticmethod
+    def ensure_tensor_type(
+        tensor: torch.Tensor,
+        target_dtype: torch.dtype = torch.float32,
+        name: str = "tensor"
+    ) -> torch.Tensor:
+        """
+        Ensure tensor is of specified type.
+
+        This utility function checks if a tensor has the required data type
+        and converts it if necessary, with optional logging for debugging.
+
+        Args:
+            tensor: Input tensor to check and potentially convert
+            target_dtype: Desired PyTorch data type (default: torch.float32)
+            name: Descriptive name for the tensor used in debug logging
+
+        Returns:
+            Tensor with the correct data type (either original or converted)
+
+        Note:
+            - Logs conversion operations at debug level
+            - Returns original tensor if already correct type (no copy)
+        """
+        if tensor.dtype != target_dtype:
+            logging.debug(
+                f"Converting {name} from {tensor.dtype} to "
+                f"{target_dtype}"
+            )
+            return tensor.to(target_dtype)
+        return tensor
+
+    @staticmethod
+    def ensure_tensor_types(
+        tensors_dict: Dict[str, torch.Tensor],
+        dtypes_dict: Dict[str, torch.dtype]
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Ensure multiple tensors have correct types.
+
+        This method processes a dictionary of tensors and ensures each one
+        has the correct data type as specified in the dtypes dictionary.
+
+        Args:
+            tensors_dict: Dictionary mapping tensor names to torch.Tensor
+                         objects
+            dtypes_dict: Dictionary mapping tensor names to required
+                        torch.dtype values
+
+        Returns:
+            Dictionary with same keys as tensors_dict but with corrected
+            tensor types where necessary
+
+        Note:
+            - Only tensors specified in dtypes_dict are type-checked
+            - Other tensors are passed through unchanged
+        """
+        result = {}
+        for name, tensor in tensors_dict.items():
+            if name in dtypes_dict:
+                result[name] = TensorUtils.ensure_tensor_type(
+                    tensor, dtypes_dict[name], name
+                )
+            else:
+                result[name] = tensor
+        return result
+
+# Update tensor type utilities
+def ensure_tensor_type(tensor: torch.Tensor, target_dtype: torch.dtype = torch.float32, 
+                      name: str = "tensor") -> torch.Tensor:
+    """Ensure a tensor has the specified data type.
+    
+    This is a wrapper function for backward compatibility that ensures tensors
+    have the correct data type for BundleSDF operations.
+    
+    Args:
+        tensor: Input tensor to convert
+        target_dtype: Desired data type for the tensor
+        name: Name of the tensor for logging purposes
+        
+    Returns:
+        torch.Tensor: Tensor converted to the target data type
+        
+    Raises:
+        TypeError: If input is not a torch.Tensor
+    """
+    return TensorUtils.ensure_tensor_type(tensor, target_dtype, name)
+
+def ensure_tensor_types(tensors_dict: Dict[str, torch.Tensor], 
+                       dtypes_dict: Dict[str, torch.dtype]) -> Dict[str, torch.Tensor]:
+    """Ensure multiple tensors have their specified data types.
+    
+    This is a wrapper function for backward compatibility that ensures multiple
+    tensors have the correct data types for BundleSDF operations.
+    
+    Args:
+        tensors_dict: Dictionary of tensors to convert
+        dtypes_dict: Dictionary mapping tensor names to their target data types
+        
+    Returns:
+        Dict[str, torch.Tensor]: Dictionary of tensors converted to their target data types
+        
+    Raises:
+        KeyError: If a tensor name in dtypes_dict is not found in tensors_dict
+        TypeError: If any input is not a torch.Tensor
+    """
+    return TensorUtils.ensure_tensor_types(tensors_dict, dtypes_dict)
 
 
 def run_gui(gui_dict, gui_lock):
@@ -264,6 +414,10 @@ def run_nerf(p_dict, kf_to_nerf_list, lock, cfg_nerf, translation, sc_factor, st
 
 class BundleSdf:
   def __init__(self, cfg_track_dir=f"{code_dir}/config_ho3d.yml", cfg_nerf_dir=f'{code_dir}/config.yml', start_nerf_keyframes=10, translation=None, sc_factor=None, use_gui=False):
+    # Initialize tensor precision management first
+    self.tensor_dtype = set_bundlesdf_precision(use_full_precision=True)
+    logging.info(f"Initialized BundleSDF with tensor precision: {self.tensor_dtype}")
+    
     with open(cfg_track_dir,'r') as ff:
       self.cfg_track = yaml.load(ff)
     self.debug_dir = self.cfg_track["debug_dir"]
@@ -341,6 +495,7 @@ class BundleSdf:
   def make_frame(self, color, depth, K, id_str, mask=None, occ_mask=None, pose_in_model=np.eye(4)):
     H,W = color.shape[:2]
     roi = [0,W-1,0,H-1]
+
     frame = my_cpp.Frame(color,depth,roi,pose_in_model,self.cnt,id_str,K,self.bundler.yml)
     if mask is not None:
       frame._fg_mask = my_cpp.cvMat(mask)

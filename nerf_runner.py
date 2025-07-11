@@ -1061,17 +1061,21 @@ class NerfRunner:
     z_vals,_ = self.sample_rays_uniform_occupied_voxels(ray_ids=ray_ids,rays_d=viewdirs,depths_in_out=depths_in_out,lindisp=lindisp,perturb=perturb, depths=depth, N_samples=self.cfg['N_samples'])
 
     if self.cfg['N_samples_around_depth']>0 and depth is not None:      #!NOTE only fine when depths are all valid
+      # Ensure all tensors are on the same device to avoid indexing errors
+      device = ray_batch.device
       valid_depth_mask = (depth>=self.cfg['near']*self.cfg['sc_factor']) & (depth<=self.cfg['far']*self.cfg['sc_factor'])
-      valid_depth_mask = valid_depth_mask.reshape(-1)
+      valid_depth_mask = valid_depth_mask.reshape(-1).to(device)
       trunc = self.get_truncation()
       near_depth = depth[valid_depth_mask]-trunc
       far_depth = depth[valid_depth_mask]+trunc*self.cfg['neg_trunc_ratio']
-      z_vals_around_depth = torch.zeros((N_rays,self.cfg['N_samples_around_depth']), device=ray_batch.device).float()
+      z_vals_around_depth = torch.zeros((N_rays,self.cfg['N_samples_around_depth']), device=device).float()
       # if torch.sum(inside_mask)>0:
       z_vals_around_depth[valid_depth_mask] = sample_rays_uniform(self.cfg['N_samples_around_depth'],near_depth.reshape(-1,1),far_depth.reshape(-1,1),lindisp=lindisp,perturb=perturb)
-      invalid_depth_mask = valid_depth_mask==0
+      invalid_depth_mask = (valid_depth_mask==0)
 
       if invalid_depth_mask.any() and self.cfg['use_octree']:
+        # Ensure ray_ids is also on the correct device
+        ray_ids = ray_ids.to(device) if ray_ids is not None else None
         z_vals_invalid,_ = self.sample_rays_uniform_occupied_voxels(ray_ids=ray_ids[invalid_depth_mask],rays_d=viewdirs[invalid_depth_mask],depths_in_out=depths_in_out[invalid_depth_mask],lindisp=lindisp,perturb=perturb, depths=None, N_samples=self.cfg['N_samples_around_depth'])
         z_vals_around_depth[invalid_depth_mask] = z_vals_invalid
       else:

@@ -7,6 +7,7 @@ SPDLOG: 2
 port: '5555'
 seg_port: '1111'
 nerf_port: "9999"
+USE_GRAY: true
 
 segmentation:
   ob_scales: [0.3,0.3,0.3]

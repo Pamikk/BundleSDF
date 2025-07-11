@@ -264,6 +264,10 @@ bool isImageChangedOpticalFlow(const cv::Mat &imgA, const cv::Mat &imgB, const c
 void getRotateImageTransform(int H, int W, float rot, Eigen::Matrix3f &forward_transform);
 void getNearestValidPixelOnDepth(const cv::Mat &depth, int &u, int &v);
 
+// Path utility functions
+std::string joinPath(const std::string &base, const std::string &path);
+std::string joinPath(const std::string &base, const std::string &path1, const std::string &path2);
+
 /**
  * @brief
  *

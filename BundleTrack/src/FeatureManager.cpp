@@ -445,7 +445,7 @@ void SiftManager::correspondenceFilterWinnerTakeAll(std::shared_ptr<Frame> frame
 void SiftManager::vizKeyPoints(std::shared_ptr<Frame> frame)
 {
   if ((*yml)["SPDLOG"].as<int>()<3) return;
-  const std::string out_dir = (*yml)["debug_dir"].as<std::string>()+"/"+frame->_id_str+"/";
+  const std::string out_dir = Utils::joinPath((*yml)["debug_dir"].as<std::string>(), frame->_id_str) + "/";
   if (!boost::filesystem::exists(out_dir))
   {
     system(std::string("mkdir -p "+out_dir).c_str());
@@ -922,7 +922,7 @@ void SiftManager::debugMapPoints()
     }
   }
 
-  const std::string out_dir = (*yml)["debug_dir"].as<std::string>()+"debug_mappoints/";
+  const std::string out_dir = Utils::joinPath((*yml)["debug_dir"].as<std::string>(), "debug_mappoints") + "/";
   if (!boost::filesystem::exists(out_dir))
   {
     system(std::string("mkdir -p "+out_dir).c_str());
@@ -1933,7 +1933,7 @@ void SiftManager::vizCorresBetween(std::shared_ptr<Frame> frameA, std::shared_pt
   if ((*yml)["SPDLOG"].as<int>()<2) return;
   const auto &corres = _matches[{frameA,frameB}];
   if (corres.size()==0) return;
-  const std::string out_dir = (*yml)["debug_dir"].as<std::string>()+_bundler->_newframe->_id_str+"/";
+  const std::string out_dir = Utils::joinPath((*yml)["debug_dir"].as<std::string>(), _bundler->_newframe->_id_str) + "/";
   if (!boost::filesystem::exists(out_dir))
   {
     system(("mkdir -p "+out_dir).c_str());
@@ -2015,7 +2015,7 @@ void SiftManager::vizCorres3DBetween(std::shared_ptr<Frame> frameA, std::shared_
 {
   if ((*yml)["SPDLOG"].as<int>()<2) return;
 
-  const std::string out_dir = (*yml)["debug_dir"].as<std::string>()+_bundler->_newframe->_id_str+"/";
+  const std::string out_dir = Utils::joinPath((*yml)["debug_dir"].as<std::string>(), _bundler->_newframe->_id_str) + "/";
   if (!boost::filesystem::exists(out_dir))
   {
     system(std::string("mkdir -p "+out_dir).c_str());
@@ -2188,7 +2188,7 @@ void Lfnet::detectFeature(std::shared_ptr<Frame> frame, float rot_deg)
 
   if ((*yml)["SPDLOG"].as<int>()>=2)
   {
-    cv::imwrite(fmt::format("{}/{}/feature_det_image.png",debug_dir,frame->_id_str), img);
+    cv::imwrite(Utils::joinPath(debug_dir, frame->_id_str, "feature_det_image.png"), img);
   }
 
   SPDLOG("prepare zmq msgs");
@@ -2466,13 +2466,13 @@ void GluNet::findCorresbyNN(std::shared_ptr<Frame> frameA, std::shared_ptr<Frame
   // processImage(frameA, out_side, imgA, tfA);
   // processImage(frameB, out_side, imgB, tfB);
 
-  processImagePair(frameA, frameB, imgA, imgB, out_side, true, tfA, tfB);
+  processImagePair(frameA, frameB, imgA, imgB, out_side, (*yml)["USE_GRAY"].as<bool>(), tfA, tfB);
 
   if ((*yml)["SPDLOG"].as<int>()>=3)
   {
     cv::Mat canvas;
     cv::hconcat(imgA, imgB, canvas);
-    cv::imwrite(fmt::format("{}/{}/feature_match_{}_{}.png",debug_dir,frameA->_id_str,frameA->_id_str,frameB->_id_str), canvas);
+    cv::imwrite(Utils::joinPath(debug_dir, frameA->_id_str, "feature_match_" + frameA->_id_str + "_" + frameB->_id_str + ".png"), canvas);
   }
 
   std::vector<Eigen::MatrixXf> corres_array_arr;
@@ -2583,7 +2583,7 @@ void GluNet::findCorresbyNNBatch(const std::vector<FramePair> &pairs)
 
     cv::Mat imgA, imgB;
     Eigen::Matrix3f tfA(Eigen::Matrix3f::Identity()), tfB(Eigen::Matrix3f::Identity());
-    processImagePair(frameA, frameB, imgA, imgB, out_side, true, tfA, tfB);
+    processImagePair(frameA, frameB, imgA, imgB, out_side, (*yml)["USE_GRAY"].as<bool>(), tfA, tfB);
 
     #pragma omp critical
     {
@@ -2598,7 +2598,7 @@ void GluNet::findCorresbyNNBatch(const std::vector<FramePair> &pairs)
     {
       cv::Mat canvas;
       cv::hconcat(imgA, imgB, canvas);
-      cv::imwrite(fmt::format("{}/{}/feature_match_{}_{}.png",debug_dir,frameA->_id_str,frameA->_id_str,frameB->_id_str), canvas);
+      cv::imwrite(Utils::joinPath(debug_dir, frameA->_id_str, "feature_match_" + frameA->_id_str + "_" + frameB->_id_str + ".png"), canvas);
     }
   }
 
@@ -2687,13 +2687,13 @@ std::tuple<std::vector<cv::Mat>, std::vector<Eigen::Matrix3f>, std::vector<Frame
 
     if (_raw_matches.find(pairs[i])!=_raw_matches.end())
     {
-      SPDLOG("_raw_matches found exsting pair ({}, {})", frameA->_id_str, frameB->_id_str);
+      SPDLOG("_raw_matches found existing pair ({}, {})", frameA->_id_str, frameB->_id_str);
       continue;
     }
 
     cv::Mat imgA, imgB;
     Eigen::Matrix3f tfA(Eigen::Matrix3f::Identity()), tfB(Eigen::Matrix3f::Identity());
-    processImagePair(frameA, frameB, imgA, imgB, out_side, true, tfA, tfB);
+    processImagePair(frameA, frameB, imgA, imgB, out_side, (*yml)["USE_GRAY"].as<bool>(), tfA, tfB);
 
     #pragma omp critical
     {
@@ -2708,7 +2708,7 @@ std::tuple<std::vector<cv::Mat>, std::vector<Eigen::Matrix3f>, std::vector<Frame
     {
       cv::Mat canvas;
       cv::hconcat(imgA, imgB, canvas);
-      cv::imwrite(fmt::format("{}/{}/feature_match_{}_{}.png",debug_dir,frameA->_id_str,frameA->_id_str,frameB->_id_str), canvas);
+      cv::imwrite(Utils::joinPath(debug_dir, frameA->_id_str, "feature_match_" + frameA->_id_str + "_" + frameB->_id_str + ".png"), canvas);
     }
   }
 

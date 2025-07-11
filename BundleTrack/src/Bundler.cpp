@@ -10,6 +10,7 @@
 
 
 #include <random>
+#include <ctime>
 #include <iostream>
 #include <stdint.h>
 #include "Bundler.h"
@@ -26,13 +27,17 @@ using namespace Eigen;
 
 Bundler::Bundler()
 {
-
+  // Initialize random seed
+  std::srand(42);  // Fixed seed for reproducibility
 }
 
 
 Bundler::Bundler(std::shared_ptr<YAML::Node> yml1): _context(1), _socket(_context, ZMQ_REQ)
 {
   yml = yml1;
+
+  // Initialize random seed
+  std::srand(42);  // Fixed seed for reproducibility
 
   pcl::console::setVerbosityLevel(pcl::console::L_ERROR);
   if ((*yml)["SPDLOG"].as<int>()<1)
@@ -79,7 +84,7 @@ void Bundler::processNewFrame(std::shared_ptr<Frame> frame)
   SPDLOG("New frame {}",frame->_id_str);
   _newframe = frame;
 
-  const std::string out_dir = (*yml)["debug_dir"].as<std::string>()+frame->_id_str+"/";
+  const std::string out_dir = Utils::joinPath((*yml)["debug_dir"].as<std::string>(), frame->_id_str) + "/";
   if ((*yml)["SPDLOG"].as<int>())
   {
     if (!boost::filesystem::exists(out_dir))
@@ -961,8 +966,8 @@ void Bundler::saveNewframeResult()
   SPDLOG("Welcome saveNewframeResult");
   std::string K_file = fmt::format("{}/cam_K.txt",(*yml)["debug_dir"].as<std::string>());
   const std::string debug_dir = (*yml)["debug_dir"].as<std::string>();
-  const std::string out_dir = debug_dir+_newframe->_id_str+"/";
-  const std::string pose_out_dir = debug_dir+"ob_in_cam/";
+  const std::string out_dir = Utils::joinPath(debug_dir, _newframe->_id_str) + "/";
+  const std::string pose_out_dir = Utils::joinPath(debug_dir, "ob_in_cam") + "/";
 
   if (!boost::filesystem::exists(K_file))
   {
@@ -974,14 +979,14 @@ void Bundler::saveNewframeResult()
   if (!boost::filesystem::exists(pose_out_dir))
   {
     system(std::string("mkdir -p "+pose_out_dir).c_str());
-    system(std::string("mkdir -p "+debug_dir+"/color").c_str());
-    system(std::string("mkdir -p "+debug_dir+"/color_viz").c_str());
-    system(std::string("mkdir -p "+debug_dir+"/color_keyframes").c_str());
-    system(std::string("mkdir -p "+debug_dir+"/depth").c_str());
-    system(std::string("mkdir -p "+debug_dir+"/depth_filtered").c_str());
-    system(std::string("mkdir -p "+debug_dir+"/depth_vis").c_str());
-    system(std::string("mkdir -p "+debug_dir+"/normal").c_str());
-    system(std::string("mkdir -p "+debug_dir+"/mask").c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "color")).c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "color_viz")).c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "color_keyframes")).c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "depth")).c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "depth_filtered")).c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "depth_vis")).c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "normal")).c_str());
+    system(std::string("mkdir -p " + Utils::joinPath(debug_dir, "mask")).c_str());
   }
 
   Eigen::Matrix4f cur_in_model = _newframe->_pose_in_model;
@@ -993,12 +998,12 @@ void Bundler::saveNewframeResult()
     ff<<std::setprecision(10)<<ob_in_cam<<std::endl;
     ff.close();
 
-    cv::imwrite(fmt::format("{}/color/{}.png",debug_dir,_newframe->_id_str),_newframe->_color_raw);
+    cv::imwrite(Utils::joinPath(debug_dir, "color", _newframe->_id_str + ".png"),_newframe->_color_raw);
     cv::Mat depth_u16;
     _newframe->_depth_raw.convertTo(depth_u16,CV_16UC1,1000);
-    cv::imwrite(fmt::format("{}/depth/{}.png",debug_dir,_newframe->_id_str),depth_u16);
+    cv::imwrite(Utils::joinPath(debug_dir, "depth", _newframe->_id_str + ".png"),depth_u16);
     _newframe->_depth.convertTo(depth_u16,CV_16UC1,1000);
-    cv::imwrite(fmt::format("{}/depth_filtered/{}.png",debug_dir,_newframe->_id_str),depth_u16);
+    cv::imwrite(Utils::joinPath(debug_dir, "depth_filtered", _newframe->_id_str + ".png"),depth_u16);
     cv::Mat mask = cv::Mat::zeros(_newframe->_H,_newframe->_W,CV_8U);
     for (int h=0;h<_newframe->_H;h++)
     {
@@ -1010,7 +1015,7 @@ void Bundler::saveNewframeResult()
         }
       }
     }
-    cv::imwrite(fmt::format("{}/mask/{}.png",debug_dir,_newframe->_id_str),mask);
+    cv::imwrite(Utils::joinPath(debug_dir, "mask", _newframe->_id_str + ".png"),mask);
 
     ///////// Normal
     cv::Mat normal_img = cv::Mat::zeros(_newframe->_H,_newframe->_W,CV_8UC3);
@@ -1029,14 +1034,14 @@ void Bundler::saveNewframeResult()
         normal_img.at<cv::Vec3b>(h,w) = {n(2),n(1),n(0)};    // BGR
       }
     }
-    cv::imwrite(fmt::format("{}/normal/{}.png",debug_dir,_newframe->_id_str),normal_img);
+    cv::imwrite(Utils::joinPath(debug_dir, "normal", _newframe->_id_str + ".png"),normal_img);
 
-    const std::string raw_dir = debug_dir+"color_segmented/";
+    const std::string raw_dir = Utils::joinPath(debug_dir, "color_segmented") + "/";
     if (!boost::filesystem::exists(raw_dir))
     {
       system(std::string("mkdir -p "+raw_dir).c_str());
     }
-    cv::imwrite(raw_dir+_newframe->_id_str+".png",_newframe->_color);
+    cv::imwrite(Utils::joinPath(raw_dir, _newframe->_id_str + ".png"),_newframe->_color);
 
     const int H = _newframe->_H;
     const int W = _newframe->_W;
@@ -1050,7 +1055,7 @@ void Bundler::saveNewframeResult()
           depth_vis.at<uchar>(h,w) = 1.0/_newframe->_depth.at<float>(h,w) / 10 * 255;
         }
       }
-      cv::imwrite(fmt::format("{}/depth_vis/{}.png",debug_dir,_newframe->_id_str),depth_vis);
+      cv::imwrite(Utils::joinPath(debug_dir, "depth_vis", _newframe->_id_str + ".png"),depth_vis);
     }
 
     {
@@ -1116,7 +1121,7 @@ void Bundler::saveFramesCloud(std::vector<std::shared_ptr<Frame>> frames, std::s
 {
   if ((*yml)["SPDLOG"].as<int>()<4) return;
 
-  const std::string out_dir = (*yml)["debug_dir"].as<std::string>()+_newframe->_id_str+"/";
+  const std::string out_dir = Utils::joinPath((*yml)["debug_dir"].as<std::string>(), _newframe->_id_str) + "/";
   if (!boost::filesystem::exists(out_dir))
   {
     system(std::string("mkdir -p "+out_dir).c_str());
@@ -1138,7 +1143,7 @@ void Bundler::saveFramesCloud(std::vector<std::shared_ptr<Frame>> frames, std::s
 void Bundler::saveKeyframesPose()
 {
   if ((*yml)["SPDLOG"].as<int>()<2) return;
-  const std::string out_dir = (*yml)["debug_dir"].as<std::string>()+"/keyframes_pose/";
+  const std::string out_dir = Utils::joinPath((*yml)["debug_dir"].as<std::string>(), "keyframes_pose") + "/";
   if (!boost::filesystem::exists(out_dir))
   {
     system(std::string("mkdir -p "+out_dir).c_str());

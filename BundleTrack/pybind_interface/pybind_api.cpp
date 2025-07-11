@@ -30,10 +30,34 @@ PYBIND11_MODULE(my_cpp, m)
         return node[key];
       })
     .def("Scalar", &YAML::Node::Scalar)
+    .def("__repr__", [](const YAML::Node &node) {
+        return YAML::Dump(node);
+    })
     ;
 
   m.def("computeCovisibility", &computeCovisibility);
-  m.def("YamlLoadFile", &YAML::LoadFile);
+  m.def("YamlLoadFile", [](const std::string& filename) -> std::shared_ptr<YAML::Node> {
+    try {
+      if (filename.empty()) {
+        throw py::value_error("Empty filename provided");
+      }
+      
+      auto node = std::make_shared<YAML::Node>(YAML::LoadFile(filename));
+      if (!node) {
+        throw py::value_error("Failed to create YAML node");
+      }
+      
+      if (!node->IsDefined() || node->IsNull()) {
+        throw py::value_error("YAML file is empty or invalid");
+      }
+      
+      return node;
+    } catch (const YAML::Exception& e) {
+      throw py::value_error("YAML parsing error: " + std::string(e.what()));
+    } catch (const std::exception& e) {
+      throw py::value_error("Error loading YAML file: " + std::string(e.what()));
+    }
+  });
   m.def("YamlDump", &YAML::Dump);
   m.def("numpy", [](const std::vector<Correspondence> &matches)
     {
@@ -133,33 +157,34 @@ PYBIND11_MODULE(my_cpp, m)
     ;
 
   py::class_<Frame, std::shared_ptr<Frame>> frame(m, "Frame");
-  frame.def(py::init<const py::array_t<uchar> &, const py::array_t<float> &, const Eigen::Vector4f &, const Eigen::Matrix4f &, int, std::string, const Eigen::Matrix3f &, std::shared_ptr<YAML::Node> >(), py::call_guard<py::gil_scoped_release>())
-    .def("invalidatePixelsByMask", &Frame::invalidatePixelsByMask, py::call_guard<py::gil_scoped_release>())
-    .def("setNewInitCoordinate", &Frame::setNewInitCoordinate, py::call_guard<py::gil_scoped_release>())
-    .def("depthToCloudAndNormals", &Frame::depthToCloudAndNormals, py::call_guard<py::gil_scoped_release>())
-    .def("updateDepthGPU", &Frame::updateDepthGPU, py::call_guard<py::gil_scoped_release>())
-    .def("pointCloudDenoise", &Frame::pointCloudDenoise, py::call_guard<py::gil_scoped_release>())
-    .def("countValidPoints", &Frame::countValidPoints, py::call_guard<py::gil_scoped_release>())
-    .def_readwrite("_depth", &Frame::_depth)
-    .def_readwrite("_color", &Frame::_color)
-    .def_readwrite("_H", &Frame::_H)
-    .def_readwrite("_W", &Frame::_W)
-    .def_readwrite("_id", &Frame::_id)
-    .def_readwrite("_id_str", &Frame::_id_str)
-    .def_readwrite("_roi", &Frame::_roi)
-    .def_readwrite("_fg_mask", &Frame::_fg_mask)
-    .def_readwrite("_occ_mask", &Frame::_occ_mask)
-    .def_readwrite("_normal_map", &Frame::_normal_map)
-    .def_readwrite("_status", &Frame::_status)
-    .def_readwrite("_ref_frame_id", &Frame::_ref_frame_id)
-    .def_readwrite("_pose_in_model", &Frame::_pose_in_model)
-    .def_readwrite("_nerfed", &Frame::_nerfed)
-    .def("pointcloud", [](Frame &in)
-      {
-        Eigen::MatrixXf out = in._cloud->getMatrixXfMap().transpose();  //(N,D)
-        return out;
-      })
-    ;
+  frame.def(py::init<>())
+       .def(py::init<const py::array_t<uchar> &, const py::array_t<float> &, const Eigen::Vector4f &, const Eigen::Matrix4f &, int, std::string, const Eigen::Matrix3f &, std::shared_ptr<YAML::Node>>())
+       .def("invalidatePixelsByMask", &Frame::invalidatePixelsByMask, py::call_guard<py::gil_scoped_release>())
+       .def("setNewInitCoordinate", &Frame::setNewInitCoordinate, py::call_guard<py::gil_scoped_release>())
+       .def("depthToCloudAndNormals", &Frame::depthToCloudAndNormals, py::call_guard<py::gil_scoped_release>())
+       .def("updateDepthGPU", &Frame::updateDepthGPU, py::call_guard<py::gil_scoped_release>())
+       .def("pointCloudDenoise", &Frame::pointCloudDenoise, py::call_guard<py::gil_scoped_release>())
+       .def("countValidPoints", &Frame::countValidPoints, py::call_guard<py::gil_scoped_release>())
+       .def_readwrite("_depth", &Frame::_depth)
+       .def_readwrite("_color", &Frame::_color)
+       .def_readwrite("_H", &Frame::_H)
+       .def_readwrite("_W", &Frame::_W)
+       .def_readwrite("_id", &Frame::_id)
+       .def_readwrite("_id_str", &Frame::_id_str)
+       .def_readwrite("_roi", &Frame::_roi)
+       .def_readwrite("_fg_mask", &Frame::_fg_mask)
+       .def_readwrite("_occ_mask", &Frame::_occ_mask)
+       .def_readwrite("_normal_map", &Frame::_normal_map)
+       .def_readwrite("_status", &Frame::_status)
+       .def_readwrite("_ref_frame_id", &Frame::_ref_frame_id)
+       .def_readwrite("_pose_in_model", &Frame::_pose_in_model)
+       .def_readwrite("_nerfed", &Frame::_nerfed)
+       .def("pointcloud", [](Frame &in)
+         {
+           Eigen::MatrixXf out = in._cloud->getMatrixXfMap().transpose();  //(N,D)
+           return out;
+         })
+       ;
 
   py::enum_<Frame::Status>(frame, "Status")
     .value("FAIL", Frame::Status::FAIL)
@@ -169,7 +194,24 @@ PYBIND11_MODULE(my_cpp, m)
 
   py::class_<Bundler, std::shared_ptr<Bundler>>(m, "Bundler")
     .def(py::init<>())
-    .def(py::init<std::shared_ptr<YAML::Node>>())
+    .def(py::init([](py::object yml_obj) {
+        try {
+            if (py::isinstance<py::none>(yml_obj)) {
+                throw py::value_error("YAML node is None");
+            }
+            
+            auto yml_ptr = yml_obj.cast<std::shared_ptr<YAML::Node>>();
+            if (!yml_ptr || !yml_ptr->IsDefined() || yml_ptr->IsNull()) {
+                throw py::value_error("Invalid YAML configuration provided");
+            }
+            
+            return std::make_shared<Bundler>(yml_ptr);
+        } catch (const py::error_already_set &e) {
+            throw py::value_error("Failed to convert YAML node: " + std::string(e.what()));
+        } catch (const std::exception &e) {
+            throw py::value_error("Error creating Bundler: " + std::string(e.what()));
+        }
+    }))
     .def(py::pickle(
       [](const Bundler &p) { // __getstate__
         return true;
