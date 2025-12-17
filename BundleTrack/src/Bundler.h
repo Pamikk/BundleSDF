@@ -68,7 +68,9 @@ public:
   bool checkAndAddKeyframe(std::shared_ptr<Frame> frame);
   void optimizeToPrev(std::shared_ptr<Frame> frame);
   void optimizeG2o(std::vector<std::shared_ptr<Frame>> frames);
+#if USE_BUNDLEFUSION
   void optimizeGPU(std::vector<std::shared_ptr<Frame>> &frames, bool find_matches);
+#endif
   void optimizationGlobal();
   void bruteForceCombination(std::set<std::shared_ptr<Frame>, FramePtrComparator> frames, std::set<std::shared_ptr<Frame>, FramePtrComparator> &best_frames, int pos, float &min_rot_dist);
   void selectKeyFramesForBA();

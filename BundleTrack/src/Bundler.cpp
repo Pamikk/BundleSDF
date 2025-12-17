@@ -14,7 +14,9 @@
 #include <iostream>
 #include <stdint.h>
 #include "Bundler.h"
+#if USE_BUNDLEFUSION
 #include "LossGPU.h"
+#endif
 #if GUROBI
 #include "gurobi_c++.h"
 #endif
@@ -252,7 +254,9 @@ void Bundler::processNewFrame(std::shared_ptr<Frame> frame)
   if (frame->_id>=1)
   {
     selectKeyFramesForBA();
+#if USE_BUNDLEFUSION
     optimizeGPU(_local_frames, true);
+#endif
   }
 
   if (frame->_status==Frame::FAIL)
@@ -773,8 +777,10 @@ void Bundler::optimizationGlobal()
     // SPDLOG(s);
     std::cout<<s<<std::endl;
 
+#if USE_BUNDLEFUSION
     optimizeGPU(frames, true);
     std::cout<<"optimizationGlobal finished"<<std::endl;
+#endif
 
 
     // SPDLOG("optimizationGlobal");
@@ -812,6 +818,7 @@ std::vector<FramePair> Bundler::getFeatureMatchPairs(std::vector<std::shared_ptr
 }
 
 
+#if USE_BUNDLEFUSION
 void Bundler::optimizeGPU(std::vector<std::shared_ptr<Frame>> &frames, bool find_matches)
 {
   const int num_iter_outter = (*yml)["bundle"]["num_iter_outter"].as<int>();
@@ -959,6 +966,7 @@ void Bundler::optimizeGPU(std::vector<std::shared_ptr<Frame>> &frames, bool find
   saveFramesCloud(frames, "optCUDA_after");
 
 }
+#endif // USE_BUNDLEFUSION
 
 
 void Bundler::saveNewframeResult()

@@ -57,6 +57,16 @@ add_definitions(-DPRINT_RESIDUALS_SPARSE=0)
 add_definitions(-DCUDA_RANSAC=1)
 add_definitions(-DCUDA_MATCHING=1)
 
+# BundleFusion support (optional)
+option(USE_BUNDLEFUSION "Enable BundleFusion GPU optimization support" ON)
+if(USE_BUNDLEFUSION)
+    add_definitions(-DUSE_BUNDLEFUSION=1)
+    message(STATUS "BundleFusion support: ENABLED")
+else()
+    add_definitions(-DUSE_BUNDLEFUSION=0)
+    message(STATUS "BundleFusion support: DISABLED")
+endif()
+
 # RPATH settings
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
@@ -133,6 +143,15 @@ file(GLOB MY_SRC
     ${PROJECT_SOURCE_DIR}/src/cuda/Solver/*.cpp
 )
 
+# Remove BundleFusion-related files if disabled
+if(NOT USE_BUNDLEFUSION)
+    list(REMOVE_ITEM MY_SRC 
+        ${PROJECT_SOURCE_DIR}/src/cuda/LossGPU.cpp
+        ${PROJECT_SOURCE_DIR}/src/cuda/CUDACache.cpp
+        ${PROJECT_SOURCE_DIR}/src/cuda/SIFTImageManager.cpp
+    )
+endif()
+
 file(GLOB G2O_LIBS ${PROJECT_SOURCE_DIR}/src/Thirdparty/g2o/lib/libg2o*)
 
 # Remove problematic PCL components if present
@@ -144,6 +163,17 @@ file(GLOB CUDA_FILES
     "${PROJECT_SOURCE_DIR}/src/cuda/*.cu"
     "${PROJECT_SOURCE_DIR}/src/cuda/Solver/*.cu"
 )
+
+# Remove BundleFusion-related CUDA files if disabled
+if(NOT USE_BUNDLEFUSION)
+    list(REMOVE_ITEM CUDA_FILES
+        ${PROJECT_SOURCE_DIR}/src/cuda/SBA.cu
+        ${PROJECT_SOURCE_DIR}/src/cuda/CUDACache.cu
+        ${PROJECT_SOURCE_DIR}/src/cuda/SIFTImageManager.cu
+        ${PROJECT_SOURCE_DIR}/src/cuda/Solver/CUDASolverBundling.cu
+        ${PROJECT_SOURCE_DIR}/src/cuda/Solver/SolverBundling.cu
+    )
+endif()
 
 # Build CUDA library
 add_library(MY_CUDA_LIB SHARED ${CUDA_FILES})
