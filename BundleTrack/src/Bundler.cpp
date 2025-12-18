@@ -14,9 +14,6 @@
 #include <iostream>
 #include <stdint.h>
 #include "Bundler.h"
-#if USE_BUNDLEFUSION
-#include "LossGPU.h"
-#endif
 #if GUROBI
 #include "gurobi_c++.h"
 #endif
@@ -254,9 +251,6 @@ void Bundler::processNewFrame(std::shared_ptr<Frame> frame)
   if (frame->_id>=1)
   {
     selectKeyFramesForBA();
-#if USE_BUNDLEFUSION
-    optimizeGPU(_local_frames, true);
-#endif
   }
 
   if (frame->_status==Frame::FAIL)
@@ -777,10 +771,6 @@ void Bundler::optimizationGlobal()
     // SPDLOG(s);
     std::cout<<s<<std::endl;
 
-#if USE_BUNDLEFUSION
-    optimizeGPU(frames, true);
-    std::cout<<"optimizationGlobal finished"<<std::endl;
-#endif
 
 
     // SPDLOG("optimizationGlobal");
@@ -816,157 +806,6 @@ std::vector<FramePair> Bundler::getFeatureMatchPairs(std::vector<std::shared_ptr
   }
   return pairs;
 }
-
-
-#if USE_BUNDLEFUSION
-void Bundler::optimizeGPU(std::vector<std::shared_ptr<Frame>> &frames, bool find_matches)
-{
-  const int num_iter_outter = (*yml)["bundle"]["num_iter_outter"].as<int>();
-  const int num_iter_inner = (*yml)["bundle"]["num_iter_inner"].as<int>();
-  const int min_fm_edges_newframe = (*yml)["bundle"]["min_fm_edges_newframe"].as<int>();
-
-  std::sort(frames.begin(), frames.end(), FramePtrComparator());
-  printf("#optimizeGPU frames=%d, #keyframes=%d, #_frames=%d\n",frames.size(),_keyframes.size(),_frames.size());
-  for (int i=0;i<frames.size();i++)
-  {
-    std::cout<<frames[i]->_id_str<<" ";
-  }
-  std::cout<<std::endl;
-
-  std::vector<EntryJ> global_corres;
-  std::vector<int> n_match_per_pair;
-  int n_edges_newframe = 0;
-
-  if (find_matches)
-  {
-#if CUDA_RANSAC==0
-    for (int i=0;i<frames.size();i++)
-    {
-      for (int j=i+1;j<frames.size();j++)
-      {
-        const auto &frameA = frames[j];
-        const auto &frameB = frames[i];
-        _fm->findCorres(frameA, frameB);
-      }
-    }
-
-#else
-    std::vector<FramePair> pairs;
-    for (int i=0;i<frames.size();i++)
-    {
-      for (int j=i+1;j<frames.size();j++)
-      {
-        const auto &frameA = frames[j];
-        const auto &frameB = frames[i];
-        if (_fm->_matches.find({frameA, frameB})==_fm->_matches.end())
-        {
-          pairs.push_back({frameA, frameB});
-          SPDLOG("add frame ({}, {}) into pairs", frameA->_id_str, frameB->_id_str);
-        }
-      }
-    }
-
-    _fm->findCorresMultiPairGPU(pairs);
-    if (_newframe->_status==Frame::FAIL) return;
-
-#endif
-  }
-
-
-  for (int i=0;i<frames.size();i++)
-  {
-    for (int j=i+1;j<frames.size();j++)
-    {
-      const auto &frameA = frames[j];
-      const auto &frameB = frames[i];
-      _fm->vizCorresBetween(frameA,frameB,"BA");
-      const auto &matches = _fm->_matches[{frameA,frameB}];
-      for (int k=0;k<matches.size();k++)
-      {
-        const auto &match = matches[k];
-        EntryJ corres;
-        corres.imgIdx_j = j;
-        corres.imgIdx_i = i;
-        corres.normal_i = make_float3(match._ptA_cam.normal_x,match._ptA_cam.normal_y,match._ptA_cam.normal_z);
-        corres.normal_j = make_float3(match._ptB_cam.normal_x,match._ptB_cam.normal_y,match._ptB_cam.normal_z);
-        corres.pos_j = make_float3(match._ptA_cam.x,match._ptA_cam.y,match._ptA_cam.z);
-        corres.pos_i = make_float3(match._ptB_cam.x,match._ptB_cam.y,match._ptB_cam.z);
-        global_corres.push_back(corres);
-        // if (frameA==_newframe || frameB==_newframe)
-        // {
-        //   n_edges_newframe++;
-        // }
-      }
-      n_match_per_pair.push_back(matches.size());
-    }
-  }
-
-  if (global_corres.size()==0)
-  {
-    SPDLOG("frame {} few global_corres, mark as FAIL",_newframe->_id_str);
-    _newframe->_status = Frame::FAIL;
-  }
-
-  const int H = frames[0]->_H;
-  const int W = frames[0]->_W;
-  const int n_pixels = H*W;
-
-  std::vector<float*> depths_gpu;
-  std::vector<uchar4*> colors_gpu;
-  std::vector<float4*> normals_gpu;
-  std::vector<Eigen::Matrix4f,Eigen::aligned_allocator<Eigen::Matrix4f> > poses;
-  std::vector<int> update_pose_flags(frames.size(),1);
-  for (int i=0;i<frames.size();i++)
-  {
-    const auto &f = frames[i];
-    depths_gpu.push_back(f->_depth_gpu);
-    colors_gpu.push_back(f->_color_gpu);
-    normals_gpu.push_back(f->_normal_gpu);
-    poses.push_back(f->_pose_in_model);
-    if (i==0 || frames[i]->_nerfed) update_pose_flags[i] = 0;
-    // if (i==0) update_pose_flags[i] = 0;
-  }
-
-  saveFramesCloud(frames, "optCUDA_before");
-
-  SPDLOG("OptimizerGPU begin, global_corres#={}",global_corres.size());
-  OptimizerGpu opt(yml);
-  opt._id_str = _newframe->_id_str;
-  opt.optimizeFrames(global_corres, n_match_per_pair, frames.size(), H, W, depths_gpu, colors_gpu, normals_gpu, update_pose_flags, poses, frames[0]->_K);
-  SPDLOG("OptimizerGPU finish");
-
-  /////////If the newframe has abnormal pose change
-  if (_newframe->_ref_frame_id==_newframe->_id-1 && _frames.find(_newframe->_ref_frame_id)!=_frames.end())
-  {
-    const float &max_trans = (*yml)["ransac"]["max_trans_neighbor"].as<float>();
-    const float &max_rot = (*yml)["ransac"]["max_rot_deg_neighbor"].as<float>()/180.0*M_PI;
-    const auto &ref_frame = _frames[_newframe->_ref_frame_id];
-    float trans_diff = (_newframe->_pose_in_model.inverse().block(0,3,3,1)-ref_frame->_pose_in_model.inverse().block(0,3,3,1)).norm();
-    if (trans_diff>max_trans)
-    {
-      _newframe->_status = Frame::FAIL;
-      fmt::print("frame {} trans_diff to neighbor: {} too big, FAIL", _newframe->_id_str, trans_diff);
-      return;
-    }
-    float rot_diff = Utils::rotationGeodesicDistance(_newframe->_pose_in_model.inverse().block(0,0,3,3), ref_frame->_pose_in_model.inverse().block(0,0,3,3));
-    if (rot_diff>max_rot)
-    {
-      _newframe->_status = Frame::FAIL;
-      fmt::print("frame {} rot_diff to neighbor: {} too big, FAIL", _newframe->_id_str, rot_diff);
-      return;
-    }
-  }
-
-  for (int i=0;i<frames.size();i++)
-  {
-    const auto &f = frames[i];
-    f->_pose_in_model = poses[i];
-  }
-
-  saveFramesCloud(frames, "optCUDA_after");
-
-}
-#endif // USE_BUNDLEFUSION
 
 
 void Bundler::saveNewframeResult()
