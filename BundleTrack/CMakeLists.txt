@@ -130,7 +130,6 @@ endif()
 file(GLOB MY_SRC 
     ${PROJECT_SOURCE_DIR}/src/*.cpp 
     ${PROJECT_SOURCE_DIR}/src/cuda/*.cpp 
-    ${PROJECT_SOURCE_DIR}/src/cuda/Solver/*.cpp
 )
 
 
@@ -143,7 +142,6 @@ list(REMOVE_ITEM PCL_LIBRARIES pcl_simulation)
 file(GLOB CUDA_FILES
     "${PROJECT_SOURCE_DIR}/src/*.cu"
     "${PROJECT_SOURCE_DIR}/src/cuda/*.cu"
-    "${PROJECT_SOURCE_DIR}/src/cuda/Solver/*.cu"
 )
 
 
