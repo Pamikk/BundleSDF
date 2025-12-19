@@ -102,7 +102,6 @@ include_directories(
     ${CSPARSE_INCLUDE_DIR}
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/cuda/
-    ${PROJECT_SOURCE_DIR}/src/cuda/Solver/
     ${PROJECT_SOURCE_DIR}/src/Thirdparty
     ${PROJECT_SOURCE_DIR}/src/Thirdparty/g2o
 )
