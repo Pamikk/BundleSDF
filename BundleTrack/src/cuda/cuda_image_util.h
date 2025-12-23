@@ -13,7 +13,7 @@
 
 namespace cuda_image_util
 {
-	void convertDepthFloatToCameraSpaceFloat4(float4* d_output, const float* d_input, const float4x4& intrinsicsInv, unsigned int width, unsigned int height);
+	void convert_depth_to_camera_space_float4(float4* d_output, const float* d_input, const float4x4& intrinsicsInv, unsigned int width, unsigned int height);
 	void computeNormals(float4* d_output, const float4* d_input, unsigned int width, unsigned int height);
 
 	void erodeDepthMap(float* d_output, float* d_input, int structureSize, unsigned int width, unsigned int height, float dThresh, float fracReq, float zfar);

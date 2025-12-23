@@ -280,7 +280,7 @@ void Frame::depthToCloudAndNormals()
       K_inv_data(row,col) = K_inv(row,col);
     }
   }
-  cuda_image_util::convertDepthFloatToCameraSpaceFloat4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);
+  cuda_image_util::convert_depth_to_camera_space_float4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);
 
   cuda_image_util::computeNormals(_normal_gpu, xyz_map_gpu, _W, _H);
 
@@ -291,7 +291,7 @@ void Frame::depthToCloudAndNormals()
   std::swap(depth_tmp_gpu, _depth_gpu);
   updateDepthCPU();
   cudaFree(depth_tmp_gpu);
-  cuda_image_util::convertDepthFloatToCameraSpaceFloat4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);  //!NOTE first time compute normal to filter edge area's depth, then recompute point cloud
+  cuda_image_util::convert_depth_to_camera_space_float4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);  //!NOTE first time compute normal to filter edge area's depth, then recompute point cloud
 
   ///////////// Copy to pcl cloud
   std::vector<float4> xyz_map(n_pixels);

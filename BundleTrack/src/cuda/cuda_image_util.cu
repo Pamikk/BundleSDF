@@ -13,30 +13,42 @@ namespace cuda_image_util
 // Convert Depth to Camera Space Positions
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void convertDepthFloatToCameraSpaceFloat4_Kernel(float4* d_output, const float* d_input, float4x4 intrinsicsInv, unsigned int width, unsigned int height)
+__global__ void convert_depth_to_camera_space_float4_kernel(
+    float4* d_output, const float* dmap, float4x4 intrinsicsInv,
+    unsigned int width, unsigned int height)
 {
-	const unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
-	const unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-	if (x < width && y < height) {
-		d_output[y*width + x] = make_float4(0,0,0,0);
+    if (x >= width || y >= height) return;
 
-		float depth = d_input[y*width + x];
+    unsigned int idx = y * width + x;
+    float depth = dmap[idx];
 
-		if (depth >= 0.1)
-		{
-			float4 cameraSpace(intrinsicsInv*make_float4((float)x*depth, (float)y*depth, depth, depth));
-			d_output[y*width + x] = make_float4(cameraSpace.x, cameraSpace.y, cameraSpace.w, 1.0f);
-		}
-	}
+    // initialize output
+    d_output[idx] = make_float4(0, 0, 0, 0);
+
+    if (depth >= 0.1f)
+    {
+        float4 p_img = make_float4(float(x) * depth, float(y) * depth, depth, depth);
+        float4 p_cam = intrinsicsInv * p_img;
+        d_output[idx] = make_float4(p_cam.x, p_cam.y, p_cam.z, 1.0f);
+    }
 }
 
-void convertDepthFloatToCameraSpaceFloat4(float4* d_output, const float* d_input, const float4x4& intrinsicsInv, unsigned int width, unsigned int height)
+void convert_depth_to_camera_space_float4(
+    float4* xyz_map,
+    const float* dmap,
+    const float4x4& intrinsicsInv,
+    unsigned int w,
+    unsigned int h)
 {
-	const dim3 gridSize((width + T_PER_BLOCK - 1) / T_PER_BLOCK, (height + T_PER_BLOCK - 1) / T_PER_BLOCK);
-	const dim3 blockSize(T_PER_BLOCK, T_PER_BLOCK);
+    dim3 blockSize(T_PER_BLOCK, T_PER_BLOCK);
+    dim3 gridSize((w + T_PER_BLOCK - 1) / T_PER_BLOCK,
+                  (h + T_PER_BLOCK - 1) / T_PER_BLOCK);
 
-	convertDepthFloatToCameraSpaceFloat4_Kernel << <gridSize, blockSize >> >(d_output, d_input, intrinsicsInv, width, height);
+	convert_depth_to_camera_space_float4_kernel<<<gridSize, blockSize>>>(
+        xyz_map, dmap, intrinsicsInv, w, h);
 
 #ifdef DEBUG
 	cutilSafeCall(cudaDeviceSynchronize());
@@ -51,87 +63,99 @@ void convertDepthFloatToCameraSpaceFloat4(float4* d_output, const float* d_input
 
 __global__ void computeNormals_Kernel(float4* d_output, const float4* d_input, unsigned int width, unsigned int height)
 {
-	const unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
-	const unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-	if (x >= width || y >= height) return;
+    // Out of bounds: set to zero and return
+    if (x >= width || y >= height) {
+        return;
+    }
 
-	d_output[y*width + x] = make_float4(0,0,0,0);
+    d_output[y * width + x] = make_float4(0, 0, 0, 0);
 
-	const float z_diff_thres = 0.02;
+    // Define a threshold for valid depth difference
+    const float z_diff_thres = 0.02f;
 
-	if (x > 0 && x < width - 1 && y > 0 && y < height - 1)
-	{
-		const float4 CC = d_input[(y + 0)*width + (x + 0)];
-		const float4 PC = d_input[(y + 1)*width + (x + 0)];
-		const float4 CP = d_input[(y + 0)*width + (x + 1)];
-		const float4 MC = d_input[(y - 1)*width + (x + 0)];
-		const float4 CM = d_input[(y + 0)*width + (x - 1)];
+    // Check bounds for safe neighbor access
+    if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+        // Fetch points for normal computation
+        const float4 center = d_input[y * width + x];
+        const float4 below = d_input[(y + 1) * width + x];
+        const float4 right = d_input[y * width + (x + 1)];
+        const float4 above = d_input[(y - 1) * width + x];
+        const float4 left = d_input[y * width + (x - 1)];
 
-		if (CC.z<0.1) return;
+        // If center depth is invalid, we can't compute normal
+        if (center.z < 0.1f) return;
 
-		float3 x_dir = make_float3(0,0,0);
-		float3 y_dir = make_float3(0,0,0);
+        float3 x_dir = make_float3(0, 0, 0);
+        float3 y_dir = make_float3(0, 0, 0);
 
-		if (PC.z>=0.1 && MC.z>=0.1 && abs(PC.z-CC.z)<=z_diff_thres && abs(MC.z-CC.z)<=z_diff_thres)
-		{
-			x_dir = make_float3(PC)-make_float3(MC);
-		}
-		else if (PC.z>=0.1 && abs(PC.z-CC.z)<=z_diff_thres)
-		{
-			x_dir = make_float3(PC)-make_float3(CC);
-		}
-		else if (MC.z>=0.1 && abs(MC.z-CC.z)<=z_diff_thres)
-		{
-			x_dir = make_float3(MC)-make_float3(CC);
-		}
-		else
-		{
-			return;
-		}
+        // X direction vector (vertical neighbors)
+        if (below.z >= 0.1f && above.z >= 0.1f &&
+            fabsf(below.z - center.z) <= z_diff_thres && fabsf(above.z - center.z) <= z_diff_thres)
+        {
+            x_dir = make_float3(below) - make_float3(above);
+        }
+        else if (below.z >= 0.1f && fabsf(below.z - center.z) <= z_diff_thres)
+        {
+            x_dir = make_float3(below) - make_float3(center);
+        }
+        else if (above.z >= 0.1f && fabsf(above.z - center.z) <= z_diff_thres)
+        {
+            x_dir = make_float3(above) - make_float3(center);
+        }
+        else
+        {
+            return;
+        }
 
-		if (CP.z>=0.1 && CM.z>=0.1 && abs(CP.z-CC.z)<=z_diff_thres && abs(CM.z-CC.z)<=z_diff_thres)
-		{
-			y_dir = make_float3(CP-CM);
-		}
-		else if (CP.z>=0.1 && abs(CP.z-CC.z)<=z_diff_thres)
-		{
-			y_dir = make_float3(CP-CC);
-		}
-		else if (CM.z>=0.1 && abs(CM.z-CC.z)<=z_diff_thres)
-		{
-			y_dir = make_float3(CM-CC);
-		}
-		else
-		{
-			return;
-		}
+        // Y direction vector (horizontal neighbors)
+        if (right.z >= 0.1f && left.z >= 0.1f &&
+            fabsf(right.z - center.z) <= z_diff_thres && fabsf(left.z - center.z) <= z_diff_thres)
+        {
+            y_dir = make_float3(right) - make_float3(left);
+        }
+        else if (right.z >= 0.1f && fabsf(right.z - center.z) <= z_diff_thres)
+        {
+            y_dir = make_float3(right) - make_float3(center);
+        }
+        else if (left.z >= 0.1f && fabsf(left.z - center.z) <= z_diff_thres)
+        {
+            y_dir = make_float3(left) - make_float3(center);
+        }
+        else
+        {
+            return;
+        }
 
-		float3 n = cross(x_dir, y_dir);
-		const float  l = length(n);
-		n = n/l;
-		if (dot(n, make_float3(-CC.x, -CC.y, -CC.z))<0)
-		{
-			n = -n;
-		}
+        float3 normal = cross(x_dir, y_dir);
+        float normal_length = length(normal);
 
-		if (l > 0.0f)
-		{
-			d_output[y*width + x] = make_float4(n, 0.0f);
-		}
-	}
+        if (normal_length > 0.0f) {
+            normal = normal / normal_length;
+
+            // Ensure normal points towards the camera
+            if (dot(normal, make_float3(-center.x, -center.y, -center.z)) < 0) {
+                normal = -normal;
+            }
+
+            d_output[y * width + x] = make_float4(normal, 0.0f);
+        }
+    }
 }
 
 void computeNormals(float4* d_output, const float4* d_input, unsigned int width, unsigned int height)
 {
-	const dim3 gridSize((width + T_PER_BLOCK - 1) / T_PER_BLOCK, (height + T_PER_BLOCK - 1) / T_PER_BLOCK);
-	const dim3 blockSize(T_PER_BLOCK, T_PER_BLOCK);
+    dim3 blockSize(T_PER_BLOCK, T_PER_BLOCK);
+    dim3 gridSize((width + T_PER_BLOCK - 1) / T_PER_BLOCK,
+                  (height + T_PER_BLOCK - 1) / T_PER_BLOCK);
 
-	computeNormals_Kernel << <gridSize, blockSize >> >(d_output, d_input, width, height);
+    computeNormals_Kernel<<<gridSize, blockSize>>>(d_output, d_input, width, height);
 
 #ifdef DEBUG
-	cutilSafeCall(cudaDeviceSynchronize());
-	cutilCheckMsg(__FUNCTION__);
+    cutilSafeCall(cudaDeviceSynchronize());
+    cutilCheckMsg(__FUNCTION__);
 #endif
 }
 
@@ -373,7 +397,7 @@ float computeCovisibility(const int H, const int W, int umin, int vmin, int umax
       K_inv_data(row,col) = K_inv(row,col);
     }
   }
-  cuda_image_util::convertDepthFloatToCameraSpaceFloat4(xyz_map_gpu, depthA, K_inv_data, W, H);
+  cuda_image_util::convert_depth_to_camera_space_float4(xyz_map_gpu, depthA, K_inv_data, W, H);
 
 	Eigen::Matrix4f *cur_in_kfcam_gpu;
 	cudaMalloc(&cur_in_kfcam_gpu, sizeof(Eigen::Matrix4f));
