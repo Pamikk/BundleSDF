@@ -251,13 +251,13 @@ void Frame::processDepth()
   const float erode_diff = (*yml)["depth_processing"]["erode"]["diff"].as<float>();
   const float zfar = (*yml)["depth_processing"]["zfar"].as<float>();
 
-  CUDAImageUtil::erodeDepthMap(depth_tmp_gpu, _depth_gpu, erode_radius, _W,_H, erode_diff, erode_ratio, zfar);
-  CUDAImageUtil::gaussFilterDepthMap(_depth_gpu, depth_tmp_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
-  CUDAImageUtil::gaussFilterDepthMap(depth_tmp_gpu, _depth_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
+  cuda_image_util::erodeDepthMap(depth_tmp_gpu, _depth_gpu, erode_radius, _W,_H, erode_diff, erode_ratio, zfar);
+  cuda_image_util::gaussFilterDepthMap(_depth_gpu, depth_tmp_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
+  cuda_image_util::gaussFilterDepthMap(depth_tmp_gpu, _depth_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
   std::swap(depth_tmp_gpu,_depth_gpu);
 
-  // CUDAImageUtil::gaussFilterDepthMap(depth_tmp_gpu, _depth_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
-  // CUDAImageUtil::gaussFilterDepthMap(_depth_gpu, depth_tmp_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
+  // cuda_image_util::gaussFilterDepthMap(depth_tmp_gpu, _depth_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
+  // cuda_image_util::gaussFilterDepthMap(_depth_gpu, depth_tmp_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
 
   updateDepthCPU();
 
@@ -280,18 +280,18 @@ void Frame::depthToCloudAndNormals()
       K_inv_data(row,col) = K_inv(row,col);
     }
   }
-  CUDAImageUtil::convertDepthFloatToCameraSpaceFloat4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);
+  cuda_image_util::convertDepthFloatToCameraSpaceFloat4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);
 
-  CUDAImageUtil::computeNormals(_normal_gpu, xyz_map_gpu, _W, _H);
+  cuda_image_util::computeNormals(_normal_gpu, xyz_map_gpu, _W, _H);
 
   float *depth_tmp_gpu;
   cudaMalloc(&depth_tmp_gpu, n_pixels*sizeof(float));
   const float angle_thres = (*yml)["depth_processing"]["edge_normal_thres"].as<float>()/180.0*M_PI;
-  CUDAImageUtil::filterDepthSmoothedEdges(depth_tmp_gpu,_depth_gpu,_normal_gpu,_W,_H,angle_thres,_K(0,0),_K(1,1),_K(0,2),_K(1,2));
+  cuda_image_util::filterDepthSmoothedEdges(depth_tmp_gpu,_depth_gpu,_normal_gpu,_W,_H,angle_thres,_K(0,0),_K(1,1),_K(0,2),_K(1,2));
   std::swap(depth_tmp_gpu, _depth_gpu);
   updateDepthCPU();
   cudaFree(depth_tmp_gpu);
-  CUDAImageUtil::convertDepthFloatToCameraSpaceFloat4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);  //!NOTE first time compute normal to filter edge area's depth, then recompute point cloud
+  cuda_image_util::convertDepthFloatToCameraSpaceFloat4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);  //!NOTE first time compute normal to filter edge area's depth, then recompute point cloud
 
   ///////////// Copy to pcl cloud
   std::vector<float4> xyz_map(n_pixels);

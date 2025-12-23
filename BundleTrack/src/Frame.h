@@ -13,7 +13,7 @@
 #define FRAME_HH_
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include "CUDAImageUtil.h"
+#include "cuda_image_util.h"
 #include "Utils.h"
 #include "FeatureManager.h"
 #include <opencv2/core/cuda.hpp>
@@ -203,7 +203,7 @@ __inline__ float computeCovisibilityCuda(const std::shared_ptr<Frame> &fA, const
   Eigen::Matrix4f cur_in_kfcam = fB->_pose_in_model.inverse()*fA->_pose_in_model;
   const float thres = std::cos((*fA->yml)["visible_angle"].as<float>()/180.0*M_PI);
   const auto &roi = fA->_roi;
-  float visible = CUDAImageUtil::computeCovisibility(fA->_H, fA->_W, roi(0), roi(2), roi(1), roi(3), fA->_K, cur_in_kfcam, thres, fA->_normal_gpu, fA->_depth_gpu);
+  float visible = cuda_image_util::computeCovisibility(fA->_H, fA->_W, roi(0), roi(2), roi(1), roi(3), fA->_K, cur_in_kfcam, thres, fA->_normal_gpu, fA->_depth_gpu);
   return visible;
 }
 
