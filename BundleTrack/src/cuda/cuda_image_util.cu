@@ -61,7 +61,7 @@ void convert_depth_to_camera_space_float4(
 // Compute Normal Map
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void computeNormals_Kernel(float4* d_output, const float4* d_input, unsigned int width, unsigned int height)
+__global__ void compute_normals_kernel(float4* d_output, const float4* d_input, unsigned int width, unsigned int height)
 {
     unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -80,18 +80,14 @@ __global__ void computeNormals_Kernel(float4* d_output, const float4* d_input, u
     if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
         // Fetch points for normal computation
         const float4 center = d_input[y * width + x];
-        const float4 below = d_input[(y + 1) * width + x];
-        const float4 right = d_input[y * width + (x + 1)];
-        const float4 above = d_input[(y - 1) * width + x];
-        const float4 left = d_input[y * width + (x - 1)];
-
-        // If center depth is invalid, we can't compute normal
+		// If center depth is invalid, we can't compute normal
         if (center.z < 0.1f) return;
+		float3 x_dir = make_float3(0, 0, 0);
 
-        float3 x_dir = make_float3(0, 0, 0);
-        float3 y_dir = make_float3(0, 0, 0);
+        const float4 below = d_input[(y + 1) * width + x];
+        const float4 above = d_input[(y - 1) * width + x];
 
-        // X direction vector (vertical neighbors)
+		// X direction vector (vertical neighbors)
         if (below.z >= 0.1f && above.z >= 0.1f &&
             fabsf(below.z - center.z) <= z_diff_thres && fabsf(above.z - center.z) <= z_diff_thres)
         {
@@ -109,6 +105,16 @@ __global__ void computeNormals_Kernel(float4* d_output, const float4* d_input, u
         {
             return;
         }
+
+        const float4 left = d_input[y * width + (x - 1)];
+		const float4 right = d_input[y * width + (x + 1)];
+
+        
+
+        
+        float3 y_dir = make_float3(0, 0, 0);
+
+        
 
         // Y direction vector (horizontal neighbors)
         if (right.z >= 0.1f && left.z >= 0.1f &&
@@ -145,13 +151,13 @@ __global__ void computeNormals_Kernel(float4* d_output, const float4* d_input, u
     }
 }
 
-void computeNormals(float4* d_output, const float4* d_input, unsigned int width, unsigned int height)
+void compute_normals(float4* d_output, const float4* d_input, unsigned int width, unsigned int height)
 {
     dim3 blockSize(T_PER_BLOCK, T_PER_BLOCK);
     dim3 gridSize((width + T_PER_BLOCK - 1) / T_PER_BLOCK,
                   (height + T_PER_BLOCK - 1) / T_PER_BLOCK);
 
-    computeNormals_Kernel<<<gridSize, blockSize>>>(d_output, d_input, width, height);
+    compute_normals_kernel<<<gridSize, blockSize>>>(d_output, d_input, width, height);
 
 #ifdef DEBUG
     cutilSafeCall(cudaDeviceSynchronize());
@@ -164,55 +170,53 @@ void computeNormals(float4* d_output, const float4* d_input, unsigned int width,
 // Erode Depth Map
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void erodeDepthMapDevice(float* d_output, float* d_input, int structureSize, int width, int height, float dThresh, float fracReq, float zfar)
+__global__ void erode_depthmap_kernel(float* d_output, const float* d_input, int structureSize, unsigned int width, unsigned int height, float dThresh, float fracReq, float zfar)
 {
-	const int x = blockIdx.x*blockDim.x + threadIdx.x;
-	const int y = blockIdx.y*blockDim.y + threadIdx.y;
+	const int x = blockIdx.x * blockDim.x + threadIdx.x;
+	const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+	if (x >= width || y >= height) return;
 
-	if (x >= 0 && x < width && y >= 0 && y < height)
+	float centerDepth = d_input[y * width + x];
+	if (centerDepth <= 0.1f || centerDepth > zfar)
 	{
+		d_output[y * width + x] = 0;
+		return;
+	}
 
-
-		unsigned int count = 0;
-
-		float oldDepth = d_input[y*width + x];
-		if (oldDepth<=0.1f || oldDepth>zfar)
+	unsigned int count = 0;
+	unsigned int sum = 0;
+	for (int i = -structureSize; i <= structureSize; i++)
+	{
+		for (int j = -structureSize; j <= structureSize; j++)
 		{
-			d_output[y*width + x] = 0;
-			return;
-		}
-		for (int i = -structureSize; i <= structureSize; i++)
-		{
-			for (int j = -structureSize; j <= structureSize; j++)
+			int nx = x + j;
+			int ny = y + i;
+			if (nx >= 0 && nx < width && ny >= 0 && ny < height)
 			{
-				if (x + j >= 0 && x + j < width && y + i >= 0 && y + i < height)
+				float depth = d_input[ny * width + nx];
+				if (depth == MINF || depth < 0.1f || fabsf(depth - centerDepth) > dThresh)
 				{
-					float depth = d_input[(y + i)*width + (x + j)];
-					if (depth == MINF || depth < 0.1f || fabs(depth - oldDepth) > dThresh)
-					{
-						count++;
-					}
+					count++;
 				}
+				sum++;
 			}
 		}
-
-		unsigned int sum = (2 * structureSize + 1)*(2 * structureSize + 1);
-		if ((float)count / (float)sum >= fracReq) {
-			d_output[y*width + x] = 0;
-		}
-		else {
-			d_output[y*width + x] = d_input[y*width + x];
-		}
 	}
+
+	if ((float)count / (float)sum >= fracReq)
+		d_output[y * width + x] = 0;
+	else
+		d_output[y * width + x] = centerDepth;
 }
 
-void erodeDepthMap(float* d_output, float* d_input, int structureSize, unsigned int width, unsigned int height, float dThresh, float fracReq, float zfar)
+void erode_depthmap(float* d_output, const float* d_input, int structureSize, unsigned int width, unsigned int height, float dThresh, float fracReq, float zfar)
 {
-	const dim3 gridSize((width + T_PER_BLOCK - 1) / T_PER_BLOCK, (height + T_PER_BLOCK - 1) / T_PER_BLOCK);
 	const dim3 blockSize(T_PER_BLOCK, T_PER_BLOCK);
+	const dim3 gridSize((width + T_PER_BLOCK - 1) / T_PER_BLOCK, (height + T_PER_BLOCK - 1) / T_PER_BLOCK);
 
-	erodeDepthMapDevice << <gridSize, blockSize >> >(d_output, d_input, structureSize, width, height, dThresh, fracReq, zfar);
+	erode_depthmap_kernel<<<gridSize, blockSize>>>(d_output, d_input, structureSize, width, height, dThresh, fracReq, zfar);
+
 #ifdef DEBUG
 	cutilSafeCall(cudaDeviceSynchronize());
 	cutilCheckMsg(__FUNCTION__);

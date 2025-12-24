@@ -251,7 +251,7 @@ void Frame::processDepth()
   const float erode_diff = (*yml)["depth_processing"]["erode"]["diff"].as<float>();
   const float zfar = (*yml)["depth_processing"]["zfar"].as<float>();
 
-  cuda_image_util::erodeDepthMap(depth_tmp_gpu, _depth_gpu, erode_radius, _W,_H, erode_diff, erode_ratio, zfar);
+  cuda_image_util::erode_depthmap(depth_tmp_gpu, _depth_gpu, erode_radius, _W,_H, erode_diff, erode_ratio, zfar);
   cuda_image_util::gaussFilterDepthMap(_depth_gpu, depth_tmp_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
   cuda_image_util::gaussFilterDepthMap(depth_tmp_gpu, _depth_gpu, bf_radius, sigma_D, sigma_R, _W, _H, zfar);
   std::swap(depth_tmp_gpu,_depth_gpu);
@@ -282,7 +282,7 @@ void Frame::depthToCloudAndNormals()
   }
   cuda_image_util::convert_depth_to_camera_space_float4(xyz_map_gpu, _depth_gpu, K_inv_data, _W, _H);
 
-  cuda_image_util::computeNormals(_normal_gpu, xyz_map_gpu, _W, _H);
+  cuda_image_util::compute_normals(_normal_gpu, xyz_map_gpu, _W, _H);
 
   float *depth_tmp_gpu;
   cudaMalloc(&depth_tmp_gpu, n_pixels*sizeof(float));
