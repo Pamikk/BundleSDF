@@ -54,6 +54,13 @@ __global__ void FindImageImageCorr_Kernel(SolverInput input, SolverState state, 
 		return;
 	}
 
+	// If set, only add dense pairs that include this frame index (skip already-computed old-old pairs)
+	if (parameters.denseOnlyPairsWithFrameIndex >= 0) {
+		unsigned int fid = (unsigned int)parameters.denseOnlyPairsWithFrameIndex;
+		if (i != fid && j != fid)
+			return;
+	}
+
 	const unsigned int tidx = threadIdx.x;
 
 	if (tidx == 0)

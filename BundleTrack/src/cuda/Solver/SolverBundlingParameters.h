@@ -26,6 +26,7 @@ struct SolverParameters
 	float denseDepthMax;
 
 	bool useDenseDepthAllPairwise; // instead of frame-to-frame
+	int denseOnlyPairsWithFrameIndex = -1; // if >= 0, only compute dense for pairs (i,j) where i==this or j==this (skip already-computed old-old pairs); -1 = all pairs
 	unsigned int denseOverlapCheckSubsampleFactor;
 
 	float weightSparse;

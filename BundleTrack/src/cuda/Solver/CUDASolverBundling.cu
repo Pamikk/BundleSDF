@@ -236,6 +236,11 @@ void CUDASolverBundling::solve(EntryJ* d_correspondences, unsigned int numberOfC
 	parameters.weightDenseColor = weightsDenseColor.front();
 	parameters.useDense = (parameters.weightDenseDepth > 0 || parameters.weightDenseColor > 0);
 	parameters.useDenseDepthAllPairwise = usePairwiseDense;
+	// If true, only compute dense for pairs that include the new frame (index N-1), skipping already-computed old-old pairs
+	if ((*yml)["bundle"]["dense_only_new_frame_pairs"] && (*yml)["bundle"]["dense_only_new_frame_pairs"].as<bool>())
+		parameters.denseOnlyPairsWithFrameIndex = (int)(numberOfImages - 1);
+	else
+		parameters.denseOnlyPairsWithFrameIndex = -1;
 
 	SolverInput solverInput;
 	solverInput.d_correspondences = d_correspondences;

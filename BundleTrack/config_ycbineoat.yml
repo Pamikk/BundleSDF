@@ -50,6 +50,7 @@ bundle:
   robust_delta: 0.005
   min_fm_edges_newframe: 15
   image_downscale: [4]
+  dense_only_new_frame_pairs: false
   feature_edge_dist_thres: 0.01
   feature_edge_normal_thres: 30   # Normal angle should be within this range
 
